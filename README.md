@@ -16,22 +16,27 @@ The project is organized into a modular structure:
 -   **`results/`**: Stores generated plots and evaluation metrics.
 -   **`data/`**: Stores raw and processed CSV data.
 
-## Workflow & Scripts
-The project pipeline is divided into sequential scripts for clarity:
+## Quick Start (Recommended)
+Run the entire pipeline (Analysis -> Tuning -> Comparison -> Forecast) with a single command:
+```bash
+python main.py
+```
+This script handles everything automatically using `src.utils` and optimized model parameters.
+
+## Detailed Workflow & Scripts
+The project pipeline is divided into sequential modules, which can also be run individually:
 
 ### 1. Data Preparation
 -   **`00_process_data.py`**: Loads raw data, fills missing values, creates lag features, and splits into train/test sets. Saves to `data/`.
 -   **`01_data_analysis.py`**: Generates Exploratory Data Analysis (EDA) plots to `results/`.
 
-### 2. Model Tuning & Development (Recommended)
--   **`02_tune_models.py`**: fine-tunes all models (RF, Prophet, LSTM) using Grid Search / Validation splits. Saves the best versions to `trained_models/`.
-
-### 3. Fast Training (Baseline)
+### 2. Model Tuning & Development
+-   **`02_tune_models.py`**: Fine-tunes all models (RF, Prophet, LSTM) using Grid Search / Validation splits. Saves the best versions to `trained_models/`.
 -   **`03_train_models.py`**: A faster alternative to tuning. Trains models with default parameters.
 
-### 4. Forecasting & Evaluation
+### 3. Forecasting & Evaluation
 -   **`04_forecast.py`**: Generates a fast forecast using the default models.
--   **`05_compare_models.py`**: Loads saved models and performs a detailed metric comparison (MAE, RMSE, R2) and classification analysis on the test set.
+-   **`05_compare_models.py`**: Loads saved models and performs a detailed metric comparison (MAE, RMSE, R2), classification analysis, and **Time Series Plotting**.
 -   **`06_forecast_best.py`**: Uses the **best performing model** (typically Random Forest) tuned in step 02 to generate the final future forecast.
 
 ## Setup Instructions
@@ -44,21 +49,9 @@ The project pipeline is divided into sequential scripts for clarity:
 2.  **Data**:
     Ensure the raw data file is present at `data/city_day.csv` (or update `configs/config.yaml`).
 
-## Usage Example (Full Pipeline)
+## Usage Example
 ```bash
-# 1. Process Data
-python 00_process_data.py
-
-# 2. Analyze Data
-python 01_data_analysis.py
-
-# 3. Tune Models (Takes time, produces best results)
-python 02_tune_models.py
-
-# 4. Compare Performance
-python 05_compare_models.py
-
-# 5. Generate Final Forecast
-python 06_forecast_best.py
+# Run the full automated pipeline
+python main.py
 ```
 Check the `results/` folder for all generated plots and `trained_models/` for the saved model files.

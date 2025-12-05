@@ -27,8 +27,8 @@ class AQIProphet:
         val_sub = df_train.iloc[split_idx:].copy()
         
         param_grid = {
-            'changepoint_prior_scale': [0.01, 0.1, 0.5],
-            'seasonality_prior_scale': [1.0, 10.0]
+            'changepoint_prior_scale': [0.001, 0.01, 0.05, 0.1, 0.5],
+            'seasonality_prior_scale': [0.1, 1.0, 10.0]
         }
         
         best_params = {}

@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
-import yaml
+from src.utils import load_config
 
 def load_and_process(config_path='configs/config.yaml'):
     """
     Loads configuration and processes the data.
     """
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
+    config = load_config(config_path)
         
     print(f"Loading data from {config['DATA_PATH']}...")
     try:

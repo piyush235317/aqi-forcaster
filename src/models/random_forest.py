@@ -8,17 +8,31 @@ from sklearn.model_selection import GridSearchCV
 class AQIRandomForest:
     def __init__(self, n_estimators=100, random_state=42):
         self.model = RandomForestRegressor(n_estimators=n_estimators, random_state=random_state)
-        self.feature_cols = [f'AQI_lag_{i}' for i in range(1, 8)]
+        self.feature_cols = None
 
     def train(self, X_train, y_train):
+        # Dynamically Identify lag features
+        self.feature_cols = [c for c in X_train.columns if c.startswith('AQI_lag_')]
+        if not self.feature_cols:
+             # Fallback if no lags, use all numeric except target (simplistic)
+             self.feature_cols = X_train.select_dtypes(include=[np.number]).columns.tolist()
+             if 'AQI' in self.feature_cols: self.feature_cols.remove('AQI')
+        
         X = X_train[self.feature_cols]
         self.model.fit(X, y_train)
 
     def predict(self, X_test):
+        if self.feature_cols is None:
+             # If loaded without training (shouldn't happen in this flow usually, but safe to check)
+             raise ValueError("Model has not been trained yet.")
         X = X_test[self.feature_cols]
         return self.model.predict(X)
 
     def tune(self, X_train, y_train):
+        # Identify features if not already done
+        if self.feature_cols is None:
+            self.feature_cols = [c for c in X_train.columns if c.startswith('AQI_lag_')]
+            
         X = X_train[self.feature_cols]
         param_grid = {
             'n_estimators': [100, 200, 300],

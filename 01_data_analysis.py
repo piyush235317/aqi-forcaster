@@ -9,9 +9,7 @@ import yaml
 plt.style.use('ggplot')
 sns.set_palette("tab10")
 
-def load_config():
-    with open('configs/config.yaml', 'r') as file:
-        return yaml.safe_load(file)
+from src.utils import load_config
 
 def generate_eda():
     print("Generating EDA visualizations...")

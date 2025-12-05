@@ -1,15 +1,12 @@
 import pandas as pd
-import yaml
+from src.utils import load_config
 from src.models import AQIRandomForest, AQIProphet, AQILSTM
 
 def main():
     print("Step 2: Training Models...")
     
-    # Load config
-    with open('configs/config.yaml', 'r') as file:
-        config = yaml.safe_load(file)
+    config = load_config()
         
-    # Load training data
     print("Loading training data from 'data/train.csv'...")
     try:
         train = pd.read_csv('data/train.csv')
@@ -18,7 +15,7 @@ def main():
         print("Error: 'data/train.csv' not found. Please run 01_process_data.py first.")
         return
 
-    # Train Models
+    # --- Train Models ---
     print("\nTraining Random Forest...")
     rf = AQIRandomForest()
     rf.train(train, train['AQI'])
@@ -31,7 +28,7 @@ def main():
     lstm = AQILSTM(epochs=10)
     lstm.train(train['AQI'].values)
     
-    # Save Models
+    # --- Save Models ---
     print(f"\nSaving models to {config['MODEL_SAVE_PATH']}...")
     rf.save_model(config['MODEL_SAVE_PATH'])
     prophet.save_model(config['MODEL_SAVE_PATH'])

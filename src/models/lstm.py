@@ -86,7 +86,7 @@ class AQILSTM:
         for config in configs:
             print(f"Testing Config {config}...")
             model = self.build_model((X_train.shape[1], X_train.shape[2]), config=config)
-            history = model.fit(X_train, y_train, epochs=5, batch_size=32, validation_data=(X_val, y_val), verbose=0)
+            history = model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), verbose=0)
             val_loss = history.history['val_loss'][-1]
             print(f"Config {config} Val Loss: {val_loss:.4f}")
             

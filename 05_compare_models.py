@@ -179,13 +179,12 @@ def main():
         r2 = [results[m][2] for m in models]
         mape = [results[m][3] for m in models]
         
-        fig, axes = plt.subplots(2, 1, figsize=(10, 10))
         
         # Plot 1: Errors (MAE, RMSE)
         x = np.arange(len(models))
         width = 0.35
         
-        ax1 = axes[0]
+        fig1, ax1 = plt.subplots(figsize=(10, 6))
         rects1 = ax1.bar(x - width/2, mae, width, label='MAE', color='skyblue')
         rects2 = ax1.bar(x + width/2, rmse, width, label='RMSE', color='salmon')
         
@@ -196,15 +195,7 @@ def main():
         ax1.legend()
         ax1.grid(axis='y', linestyle='--', alpha=0.7)
         
-        # Plot 2: R2 Score (Accuracy)
-        ax2 = axes[1]
-        rects3 = ax2.bar(models, r2, color='lightgreen', width=0.5)
-        ax2.set_ylabel('R2 Score (Higher is Better)')
-        ax2.set_title('Model Fit Quality')
-        ax2.set_ylim(bottom=min(min(r2)*1.2, 0), top=1.0) # Dynamic limit
-        ax2.grid(axis='y', linestyle='--', alpha=0.7)
-        
-        # Annotations
+        # Annotations for Plot 1
         def autolabel(rects, ax):
             for rect in rects:
                 height = rect.get_height()
@@ -216,12 +207,31 @@ def main():
 
         autolabel(rects1, ax1)
         autolabel(rects2, ax1)
+        
+        fig1.tight_layout()
+        save_path_errors = 'results/model_errors.png'
+        plt.figure(fig1.number) # Set current figure
+        plt.savefig(save_path_errors)
+        print(f"Error plot saved to '{save_path_errors}'")
+        plt.close(fig1)
+
+        # Plot 2: R2 Score (Accuracy)
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        rects3 = ax2.bar(models, r2, color='lightgreen', width=0.5)
+        ax2.set_ylabel('R2 Score (Higher is Better)')
+        ax2.set_title('Model Fit Quality (R2 Score)')
+        ax2.set_ylim(bottom=min(min(r2)*1.2, 0), top=1.0) 
+        ax2.grid(axis='y', linestyle='--', alpha=0.7)
+        
         autolabel(rects3, ax2)
         
-        plt.tight_layout()
-        save_path = 'results/model_comparison.png'
-        plt.savefig(save_path)
-        print(f"Comparison plot saved to '{save_path}'")
+        fig2.tight_layout()
+        save_path_r2 = 'results/model_r2_score.png'
+        plt.figure(fig2.number)
+        plt.savefig(save_path_r2)
+        print(f"R2 score plot saved to '{save_path_r2}'")
+        plt.close(fig2)
+
         
         # Also print summary table
         print("\nSummary Validation Table:")

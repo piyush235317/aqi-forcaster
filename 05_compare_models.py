@@ -5,8 +5,67 @@ import joblib
 import yaml
 import os
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, mean_absolute_percentage_error
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+import seaborn as sns
 from tensorflow.keras.models import load_model
+
 from src.preprocessing import load_and_process
+
+def get_aqi_category(aqi):
+    # Determine category based on AQI value (Indian Standard)
+    if aqi <= 50: return 'Good'
+    elif aqi <= 100: return 'Satisfactory'
+    elif aqi <= 200: return 'Moderate'
+    elif aqi <= 300: return 'Poor'
+    elif aqi <= 400: return 'Very Poor'
+    else: return 'Severe'
+
+def evaluate_classification_metrics(y_true, y_pred, model_name):
+    # Convert numerical AQI to categorical buckets
+    y_true_cat = [get_aqi_category(val) for val in y_true]
+    y_pred_cat = [get_aqi_category(val) for val in y_pred]
+    
+    # Calculate metrics
+    acc = accuracy_score(y_true_cat, y_pred_cat)
+    f1 = f1_score(y_true_cat, y_pred_cat, average='weighted', zero_division=0)
+    
+    
+    report_str = f"\n[{model_name}] Classification Report (Regression-to-Classification):\n"
+    report_str += f"Accuracy: {acc:.2%}\n"
+    report_str += f"Weighted F1-Score: {f1:.2f}\n"
+    report_str += "Confusion Matrix:\n"
+    report_str += str(confusion_matrix(y_true_cat, y_pred_cat, labels=['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe']))
+    
+    print(report_str)
+    
+    return acc, f1, report_str, y_true_cat, y_pred_cat
+
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    """
+    Generates and saves a professional confusion matrix heatmap.
+    """
+    cm = confusion_matrix(y_true, y_pred, labels=['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'])
+    
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'],
+                yticklabels=['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'])
+    
+    plt.title(f'Confusion Matrix - {model_name}')
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
+    plt.tight_layout()
+    
+    # Save
+    filename = f'results/confusion_matrix_{model_name.replace(" ", "_")}.png'
+    save_path = os.path.abspath(filename)
+    plt.savefig(filename, dpi=300)
+    plt.close()
+    
+    print(f"Confusion matrix saved to '{save_path}'")
+
+
+
 
 def evaluate_model(y_true, y_pred, model_name):
     # Ensure standard types
@@ -38,6 +97,10 @@ def main():
         
     y_test = test['AQI'].values
     results = {}
+    class_reports = {}
+    cls_results = {}
+
+
     
     # 1. Random Forest
     print("\nEvaluating Random Forest...")
@@ -49,6 +112,15 @@ def main():
             X_test_rf = test[feature_cols]
             rf_pred = rf_model.predict(X_test_rf)
             results['Random Forest'] = evaluate_model(y_test, rf_pred, 'Random Forest')
+            acc, f1, report, y_true_cat, rf_pred_cat = evaluate_classification_metrics(y_test, rf_pred, 'Random Forest')
+            class_reports['Random Forest'] = report
+            cls_results['Random Forest'] = (acc, f1)
+            plot_confusion_matrix(y_true_cat, rf_pred_cat, 'Random Forest')
+
+
+
+
+
         else:
             print("Random Forest model not found.")
     except Exception as e:
@@ -64,6 +136,14 @@ def main():
             forecast = prophet_model.predict(future)
             prophet_pred = forecast['yhat'].values
             results['Prophet'] = evaluate_model(y_test, prophet_pred, 'Prophet')
+            acc, f1, report, y_true_cat, prophet_pred_cat = evaluate_classification_metrics(y_test, prophet_pred, 'Prophet')
+            class_reports['Prophet'] = report
+            cls_results['Prophet'] = (acc, f1)
+            plot_confusion_matrix(y_true_cat, prophet_pred_cat, 'Prophet')
+
+
+
+
         else:
             print("Prophet model not found.")
     except Exception as e:
@@ -156,6 +236,13 @@ def main():
                      # Ensure lengths match
                      if len(lstm_pred) == len(y_test):
                         results['LSTM'] = evaluate_model(y_test, lstm_pred, 'LSTM')
+                        acc, f1, report, y_true_cat, lstm_pred_cat = evaluate_classification_metrics(y_test, lstm_pred, 'LSTM')
+                        class_reports['LSTM'] = report
+                        cls_results['LSTM'] = (acc, f1)
+                        plot_confusion_matrix(y_true_cat, lstm_pred_cat, 'LSTM')
+
+
+
                      else:
                          print(f"LSTM dimension mismatch: pred {len(lstm_pred)} vs true {len(y_test)}")
                  else:
@@ -225,12 +312,45 @@ def main():
         
         autolabel(rects3, ax2)
         
+        
         fig2.tight_layout()
         save_path_r2 = 'results/model_r2_score.png'
         plt.figure(fig2.number)
         plt.savefig(save_path_r2)
         print(f"R2 score plot saved to '{save_path_r2}'")
         plt.close(fig2)
+
+        # Plot 3: Classification Metrics (Accuracy, F1)
+        if cls_results:
+            cls_models = list(cls_results.keys())
+            accuracies = [cls_results[m][0] for m in cls_models]
+            f1_scores = [cls_results[m][1] for m in cls_models]
+            
+            x_cls = np.arange(len(cls_models))
+            
+            fig3, ax3 = plt.subplots(figsize=(10, 6))
+            rects_acc = ax3.bar(x_cls - width/2, accuracies, width, label='Accuracy', color='lightskyblue')
+            rects_f1 = ax3.bar(x_cls + width/2, f1_scores, width, label='Weighted F1', color='plum')
+            
+            ax3.set_ylabel('Score (0-1)')
+            ax3.set_title('Classification Performance (Accuracy & F1)')
+            ax3.set_xticks(x_cls)
+            ax3.set_xticklabels(cls_models)
+            ax3.legend()
+            ax3.set_ylim(0, 1.05)
+            ax3.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            autolabel(rects_acc, ax3)
+            autolabel(rects_f1, ax3)
+            
+            fig3.tight_layout()
+            save_path_cls = 'results/model_accuracy_comparison.png'
+            plt.figure(fig3.number)
+            plt.savefig(save_path_cls)
+            print(f"Classification plot saved to '{save_path_cls}'")
+            plt.close(fig3)
+
+
 
         
         # Also print summary table
@@ -240,9 +360,8 @@ def main():
         for m in models:
             metrics = results[m]
             print(f"{m:<15} | {metrics[0]:<10.2f} | {metrics[1]:<10.2f} | {metrics[2]:<10.2f} | {metrics[3]:<10.2f}")
-            
-    else:
-        print("No models were evaluated successfully.")
+
+
 
 if __name__ == "__main__":
     main()

@@ -1,38 +1,42 @@
 import pandas as pd
 import numpy as np
-from data_processor import load_data, filter_by_city, handle_missing_values, create_lag_features, get_train_test_split
-from models.random_forest import AQIRandomForest
-from models.prophet_model import AQIProphet
-from models.lstm import AQILSTM
-from evaluation import evaluate_models
+import yaml
+import os
+import joblib
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from src.preprocessing import load_and_process
+from src.models import AQIRandomForest, AQIProphet, AQILSTM
+
+def evaluate(y_true, y_pred, model_name):
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    print(f"[{model_name}] MAE: {mae:.2f}, RMSE: {rmse:.2f}")
 
 def main():
-    # 1. Load and Process Data
-    print("Loading and processing data...")
-    df = load_data()
-    df = filter_by_city(df)
-    df = handle_missing_values(df)
-    df = create_lag_features(df)
+    print("Step 2 (Tune): Tuning Models...")
     
-    # 2. Split Data
-    print("Splitting data...")
-    train, test = get_train_test_split(df)
+    # 1. Load and Process Data
+    # load_and_process returns train, test, config, full_df
+    train, test, config, _ = load_and_process()
+    
+    if train is None:
+        print("Error: Could not load data.")
+        return
+
     print(f"Train size: {len(train)}, Test size: {len(test)}")
     
-    # 3. Tune and Train Models
+    # 2. Tune and Train Models
     
     # Random Forest
     print("\nTuning Random Forest...")
     rf = AQIRandomForest()
+    # Note: AQIRandomForest.tune refits the model on the provided data with best params
     rf.tune(train, train['AQI']) 
-    # rf.model is now the best estimator refitted on the training data
     
     # Prophet
     print("\nTuning Prophet...")
     prophet = AQIProphet()
     prophet.tune(train) 
-    print("Training Prophet with best params...")
-    prophet.train(train)
     
     # LSTM
     print("\nTuning LSTM...")
@@ -41,44 +45,45 @@ def main():
     print("Training LSTM with best config...")
     lstm.train(train['AQI'].values)
     
-    # 4. Generate Predictions
-    print("\nGenerating predictions...")
+    # 3. Generate Predictions on Test Set for Quick Check
+    print("\nGenerating predictions for validation...")
     
     # Random Forest
-    preds_rf = rf.predict(test)
+    rf_pred = rf.predict(test)
+    evaluate(test['AQI'], rf_pred, 'Random Forest (Tuned)')
     
     # Prophet
-    preds_prophet_df = prophet.predict(periods=len(test))
-    preds_prophet = preds_prophet_df['yhat'].tail(len(test)).values
+    prophet_forecast = prophet.predict(periods=len(test))
+    prophet_pred = prophet_forecast['yhat'].tail(len(test)).values
+    evaluate(test['AQI'], prophet_pred, 'Prophet (Tuned)')
     
     # LSTM
+    # For LSTM validation here, we do a quick check. 
+    # 05_compare_models.py has more robust sliding window logic.
+    # Here we just want to ensure it runs.
+    # We need context for LSTM.
     window_size = 30
     train_aqi = train['AQI'].values
     test_aqi = test['AQI'].values
     combined_data = np.concatenate((train_aqi[-window_size:], test_aqi))
-    preds_lstm = lstm.predict(combined_data)
-    preds_lstm = preds_lstm.flatten()
+    lstm_pred = lstm.predict(combined_data)
+    lstm_pred = lstm_pred.flatten()
     
-    # 5. Evaluation & Visualization
-    print("\nEvaluation Results (Tuned Models):")
-    y_test = test['AQI'].values
-    dates = test['Date']
+    if len(lstm_pred) == len(test):
+        evaluate(test['AQI'], lstm_pred, 'LSTM (Tuned)')
+    else:
+        print(f"[LSTM] Warning: Pred length {len(lstm_pred)} != Test length {len(test)}")
+
+    # 4. Save Best Model (Random Forest is usually best, but we save all tuned versions)
+    print(f"\nSaving tuned models to {config['MODEL_SAVE_PATH']}...")
+    rf.save_model(config['MODEL_SAVE_PATH'])
+    prophet.save_model(config['MODEL_SAVE_PATH'])
+    lstm.save_model(config['MODEL_SAVE_PATH'])
     
-    predictions_dict = {
-        'Random Forest (Tuned)': preds_rf,
-        'Prophet (Tuned)': preds_prophet,
-        'LSTM (Tuned)': preds_lstm
-    }
-    
-    evaluate_models(dates, y_test, predictions_dict, filename='tuned_model_comparison.png')
-    
-    # 6. Save Best Model (Random Forest)
-    import joblib
-    import os
-    print("\nSaving best model (Random Forest)...")
-    os.makedirs('saved_models', exist_ok=True)
-    joblib.dump(rf, 'saved_models/best_model.pkl')
-    print("Model saved as 'saved_models/best_model.pkl'")
+    # Save specific 'best_model.pkl' for the forecast script to pick up
+    # We assume Random Forest is best based on typical performance on this data
+    joblib.dump(rf.model, os.path.join(config['MODEL_SAVE_PATH'], 'best_model.pkl'))
+    print(f"Best model (Random Forest) saved as '{os.path.join(config['MODEL_SAVE_PATH'], 'best_model.pkl')}'")
 
 if __name__ == "__main__":
     main()

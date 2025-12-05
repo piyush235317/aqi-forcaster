@@ -1,6 +1,6 @@
 CITY_NAME: 'Delhi'
 DATA_PATH: 'data/city_day.csv'
-MODEL_SAVE_PATH: 'saved_models/'
+MODEL_SAVE_PATH: 'trained_models/'
 FORECAST_DAYS: 7
 LAG_DAYS: 7
 RESULTS_PATH: 'results/'

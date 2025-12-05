@@ -2,8 +2,9 @@ import pandas as pd
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
-from data_processor import load_data, filter_by_city, handle_missing_values, create_lag_features
-from models.random_forest import AQIRandomForest
+import os
+import yaml
+from src.preprocessing import load_and_process
 
 def get_aqi_category(aqi):
     if aqi <= 50: return "Good"
@@ -23,51 +24,20 @@ def generate_forecast(model, last_available_data, days=7):
     # Get the last row of data
     current_data = last_available_data.iloc[-1].copy()
     
-    # We need to maintain the lag features. 
-    # AQI_lag_1 is yesterday's AQI.
-    # When predicting day T+1, AQI_lag_1 is AQI at T.
-    # When predicting day T+2, AQI_lag_1 is prediction at T+1.
+    # We need to reconstruct the feature set for the prediction.
+    # The models are trained on [AQI_lag_1, ..., AQI_lag_7]
     
-    # Initialize lags from the last known data
-    # We need a way to shift lags. 
-    # current_data has AQI_lag_1, AQI_lag_2, ...
-    
-    # Let's create a list of recent AQI values to easily update lags
-    # We need the last 7 days of AQI to populate lags 1-7
-    # Assuming the input dataframe has correct lags, we can reconstruct the history
-    
-    # Actually, simpler:
-    # AQI_lag_1 is the most recent value.
-    # AQI_lag_2 is the one before that.
-    
-    recent_aqi = []
-    for i in range(1, 8):
-        recent_aqi.append(current_data[f'AQI_lag_{i}'])
-    
-    # recent_aqi[0] is lag_1 (T-1), recent_aqi[1] is lag_2 (T-2)...
-    # Wait, if current_data is at time T, then AQI_lag_1 is T-1.
-    # But we want to predict T+1.
-    # The features for T+1 should be:
-    # AQI_lag_1 = AQI at T (which is current_data['AQI'])
-    # AQI_lag_2 = AQI at T-1 (which is current_data['AQI_lag_1'])
-    
-    # So we need the actual AQI of the last row to start the recursion
     last_known_aqi = current_data['AQI']
     
     # History: [AQI_T, AQI_T-1, AQI_T-2, ...]
+    # We assume the dataframe has these lags populated correctly already.
     history = [last_known_aqi] + [current_data[f'AQI_lag_{i}'] for i in range(1, 8)]
     
     for date in future_dates:
         # Construct features for this new day
         features = {}
         
-        # 1. Weather features (Persistence: use last known values)
-        # Identify non-lag, non-date, non-AQI columns
-        for col in last_available_data.columns:
-            if 'lag' not in col and col not in ['Date', 'AQI', 'City', 'AQI_Bucket']:
-                features[col] = current_data[col] # Persistence
-        
-        # 2. Lag features
+        # 1. Update lag features
         # AQI_lag_1 is history[0] (yesterday)
         # AQI_lag_2 is history[1] (day before yesterday)
         for i in range(1, 8):
@@ -76,43 +46,44 @@ def generate_forecast(model, last_available_data, days=7):
         # Create DataFrame for prediction (single row)
         X_new = pd.DataFrame([features])
         
-        # Ensure column order matches training
-        # The model object (AQIRandomForest) has feature_cols, but that only includes lags.
-        # Wait, our AQIRandomForest.train ONLY uses lag features.
-        # "self.feature_cols = [f'AQI_lag_{i}' for i in range(1, 8)]"
-        # So we ONLY need to update lags! Weather data is ignored by our specific RF implementation.
-        # That simplifies things greatly.
+        # Ensure we only pass the columns the model expects (lags)
+        feature_cols = [f'AQI_lag_{i}' for i in range(1, 8)]
+        X_new = X_new[feature_cols]
         
         # Predict
         pred_aqi = model.predict(X_new)[0]
         forecasts.append({'Date': date, 'Predicted AQI': pred_aqi, 'AQI Category': get_aqi_category(pred_aqi)})
         
         # Update history for next iteration
-        # Newest value becomes history[0]
         history.insert(0, pred_aqi)
-        # Keep only needed history length
         history = history[:8]
         
     return pd.DataFrame(forecasts)
 
 def main():
-    print("Loading data...")
-    df = load_data()
-    df = filter_by_city(df)
-    df = handle_missing_values(df)
-    df = create_lag_features(df)
+    print("Step 5: Generating Forecast with Best Model...")
     
-    print("Loading best model...")
-    try:
-        rf_model = joblib.load('saved_models/best_model.pkl')
-    except FileNotFoundError:
-        print("Error: 'saved_models/best_model.pkl' not found. Please run 02_tune_models.py first.")
+    # Load Processed Data
+    # We can reuse the load_and_process to get the config and full df
+    _, _, config, full_df = load_and_process()
+    
+    # Check if full_df is loaded
+    if full_df is None:
+        print("Error: Could not load data.")
         return
 
-    print("Generating forecast...")
-    forecast_df = generate_forecast(rf_model, df, days=7)
+    print("Loading best model...")
+    model_path = os.path.join(config['MODEL_SAVE_PATH'], 'best_model.pkl')
+    try:
+        rf_model = joblib.load(model_path)
+    except FileNotFoundError:
+        print(f"Error: '{model_path}' not found. Please run 02_tune_models.py first.")
+        return
+
+    print(f"Generating {config['FORECAST_DAYS']}-Day forecast...")
+    forecast_df = generate_forecast(rf_model, full_df, days=config['FORECAST_DAYS'])
     
-    print("\n7-Day Forecast:")
+    print("\nForecast Results:")
     print(forecast_df.to_string(index=False))
     
     # Plotting
@@ -120,27 +91,28 @@ def main():
     plt.figure(figsize=(12, 6))
     
     # Last 30 days of actual data
-    last_30_days = df.iloc[-30:]
+    last_30_days = full_df.iloc[-30:]
     plt.plot(last_30_days['Date'], last_30_days['AQI'], label='Actual History', color='black')
     
     # Forecast
-    # Connect last actual point to first forecast point for continuity
     last_date = last_30_days['Date'].iloc[-1]
     last_aqi = last_30_days['AQI'].iloc[-1]
     
     plot_dates = [last_date] + list(forecast_df['Date'])
     plot_aqi = [last_aqi] + list(forecast_df['Predicted AQI'])
     
-    plt.plot(plot_dates, plot_aqi, label='Forecast', color='red', linestyle='--', marker='o')
+    plt.plot(plot_dates, plot_aqi, label='Forecast (Best Model)', color='green', linestyle='--', marker='o')
     
-    plt.title('AQI Forecast: Next 7 Days (Delhi)')
+    plt.title(f"AQI Forecast: Next {config['FORECAST_DAYS']} Days ({config['CITY_NAME']})")
     plt.xlabel('Date')
     plt.ylabel('AQI')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('aqi_future_forecast.png')
-    print("Plot saved as 'aqi_future_forecast.png'")
+    
+    save_path = os.path.join(config['RESULTS_PATH'], 'best_model_forecast.png')
+    plt.savefig(save_path)
+    print(f"Plot saved as '{save_path}'")
 
 if __name__ == "__main__":
     main()
